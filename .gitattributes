@@ -1,0 +1,6 @@
+# Keep shell/JS/markdown as LF. Batch files are stored with CRLF as-is:
+# a ZIP download from GitHub gets the blob verbatim, and cmd.exe needs CRLF.
+* text=auto eol=lf
+*.cmd -text
+*.png binary
+*.jpg binary

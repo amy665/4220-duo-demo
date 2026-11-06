@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOTP / TOTP demo - one secret, no communication</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121821;
+    --panel-2: #0f1520;
+    --line: #22303f;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --accent: #4ea1ff;
+    --good: #3ddc97;
+    --warn: #f0b429;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 48px;
+    background: radial-gradient(900px 500px at 50% -10%, #162338 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  header h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  header p { margin: 0 0 22px; color: var(--muted); }
+
+  .keybar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 18px;
+  }
+  .keybar label { color: var(--muted); font-size: 13px; }
+  .keybar input {
+    flex: 1 1 340px; min-width: 240px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-family: var(--mono); font-size: 13px;
+  }
+  .keybar input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { color: var(--muted); font-size: 12.5px; font-family: var(--mono); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+  }
+  .card h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 0 0 14px; font-weight: 600;
+  }
+  .code {
+    font-family: var(--mono); font-size: 46px; letter-spacing: 0.12em;
+    line-height: 1.1; margin: 6px 0 4px; color: var(--text);
+  }
+  .code small { font-size: 15px; letter-spacing: 0; color: var(--muted); }
+  .sub { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  button {
+    background: #1b2634; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 13px; font-size: 13.5px; cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  button:hover { background: #223145; border-color: #33506e; }
+  button.primary { background: #12365c; border-color: #1e5a91; }
+  button.primary:hover { background: #17457a; }
+  button.step { min-width: 38px; font-family: var(--mono); }
+
+  .agree {
+    margin-top: 14px; font-size: 13px; display: flex; gap: 8px; align-items: center;
+    color: var(--muted); min-height: 20px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .dot.ok { background: var(--good); }
+
+  .wide { margin-top: 16px; }
+  .totp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .bar { height: 6px; background: #1b2634; border-radius: 99px; overflow: hidden; margin-top: 14px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); width: 100%; }
+
+  .note {
+    margin-top: 22px; padding: 14px 16px; border-left: 3px solid var(--warn);
+    background: rgba(240, 180, 41, 0.07); border-radius: 0 10px 10px 0;
+    color: #cfd8e3; font-size: 13.5px;
+  }
+  .note b { color: var(--warn); }
+  .foot { margin-top: 18px; color: var(--muted); font-size: 12.5px; }
+  .err { color: #ff8080; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>One secret, two devices, no communication</h1>
+    <p>Both cards below hold the same key and run the same standard algorithm locally. Nothing is sent anywhere.</p>
+  </header>
+
+  <div class="keybar">
+    <label for="key">Shared secret (base32)</label>
+    <input id="key" spellcheck="false" autocomplete="off" value="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ">
+    <span class="hint" id="keyinfo">-</span>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Device A &middot; HOTP</h2>
+      <div class="code" id="codeA">------</div>
+      <div class="sub">counter #<span id="ctrA">0</span></div>
+      <div class="row">
+        <button class="step" id="minusA" title="counter - 1">-</button>
+        <button class="step" id="plusA" title="counter + 1">+</button>
+        <button class="primary" id="useA">Use code &rarr; +1</button>
+        <button id="reset">Reset</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Device B &middot; HOTP</h2>
+      <div class="code" id="codeB">------</div>
+      <div class="sub">counter #<span id="ctrB">0</span></div>
+      <div class="row">
+        <button class="step" id="minusB" title="counter - 1">-</button>
+        <button class="step" id="plusB" title="counter + 1">+</button>
+        <button class="primary" id="useB">Use code &rarr; +1</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="card wide">
+    <div class="totp-head">
+      <h2 style="margin:0">TOTP &middot; same key, time instead of a counter</h2>
+      <div class="sub">counter = floor(unix / 30) = <span id="ctrT">-</span></div>
+    </div>
+    <div class="code" id="codeT">------</div>
+    <div class="sub"><span id="secLeft">30</span>s until the counter changes</div>
+    <div class="bar"><i id="bar"></i></div>
+  </section>
+
+  <div class="agree" id="agree"><span class="dot" id="dot"></span><span id="agreeText">-</span></div>
+
+  <div class="note">
+    <b>There is no decryption in this page.</b>
+    The key is not recovered from the digits, and the server never reverses them.
+    It recomputes <span style="font-family:var(--mono)">HMAC-SHA1(key, counter)</span> and compares the result.
+    That is also why the digits change when the counter changes, and why the digits
+    alone tell you nothing about the key.
+  </div>
+
+  <p class="foot">RFC 4226 (HOTP) and RFC 6238 (TOTP). Demo key is the published RFC 4226 test vector, not a credential.</p>
+</div>
+
+<script>
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const PERIOD = 30;
+
+const $ = (id) => document.getElementById(id);
+
+function b32decode(str) {
+  const s = String(str).replace(/=+$/, "").replace(/\s+/g, "").toUpperCase();
+  let bits = 0, acc = 0;
+  const out = [];
+  for (const ch of s) {
+    const idx = ALPHABET.indexOf(ch);
+    if (idx === -1) throw new Error("bad base32 character: " + ch);
+    acc = (acc << 5) | idx;
+    bits += 5;
+    if (bits >= 8) { out.push((acc >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return new Uint8Array(out);
+}
+
+async function hmacSha1(keyBytes, msg) {
+  const key = await crypto.subtle.importKey(
+    "raw", keyBytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]
+  );
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, msg));
+}
+
+function counterBytes(counter) {
+  const msg = new Uint8Array(8);
+  let c = BigInt(counter);
+  for (let i = 7; i >= 0; i--) { msg[i] = Number(c & 0xffn); c >>= 8n; }
+  return msg;
+}
+
+async function hotp(keyBytes, counter, digits = 6) {
+  const mac = await hmacSha1(keyBytes, counterBytes(counter));
+  const offset = mac[mac.length - 1] & 0x0f;
+  const binary =
+    ((mac[offset] & 0x7f) << 24) |
+    ((mac[offset + 1] & 0xff) << 16) |
+    ((mac[offset + 2] & 0xff) << 8) |
+    (mac[offset + 3] & 0xff);
+  return String(binary % 10 ** digits).padStart(digits, "0");
+}
+
+const state = { keyBytes: null, a: 0, b: 0, totp: "", totpCounter: -1 };
+
+function setText(el, text) { el.textContent = text; }
+
+function fmt(code) { return code.slice(0, 3) + " " + code.slice(3); }
+
+async function refresh() {
+  try {
+    state.keyBytes = b32decode($("key").value);
+    setText($("keyinfo"), state.keyBytes.length + " bytes");
+    $("key").style.borderColor = "";
+  } catch (e) {
+    setText($("keyinfo"), "");
+    setText($("agreeText"), "Invalid base32 key - " + e.message);
+    $("dot").className = "dot";
+    $("key").style.borderColor = "#ff8080";
+    return;
+  }
+
+  const [ca, cb] = await Promise.all([
+    hotp(state.keyBytes, state.a),
+    hotp(state.keyBytes, state.b),
+  ]);
+
+  setText($("codeA"), fmt(ca));
+  setText($("codeB"), fmt(cb));
+  setText($("ctrA"), String(state.a));
+  setText($("ctrB"), String(state.b));
+
+  const same = ca === cb;
+  $("dot").className = same ? "dot ok" : "dot";
+  setText(
+    $("agreeText"),
+    same
+      ? "Both devices agree: same key, same counter -> same code. They have never communicated."
+      : "Different counters -> different codes. Same key, but one device moved ahead: this is counter drift."
+  );
+
+  await tickTotp();
+}
+
+async function tickTotp() {
+  if (!state.keyBytes) return;
+  const now = Date.now();
+  const counter = Math.floor(now / 1000 / PERIOD);
+  const left = PERIOD - (Math.floor(now / 1000) % PERIOD);
+  if (counter !== state.totpCounter) {
+    state.totpCounter = counter;
+    state.totp = await hotp(state.keyBytes, counter);
+    setText($("codeT"), fmt(state.totp));
+    setText($("ctrT"), String(counter));
+  }
+  setText($("secLeft"), String(left));
+  $("bar").style.width = (left / PERIOD) * 100 + "%";
+}
+
+const clamp = (n) => (n < 0 ? 0 : n);
+
+$("plusA").onclick = async () => { state.a++; await refresh(); };
+$("minusA").onclick = async () => { state.a = clamp(state.a - 1); await refresh(); };
+$("plusB").onclick = async () => { state.b++; await refresh(); };
+$("minusB").onclick = async () => { state.b = clamp(state.b - 1); await refresh(); };
+$("useA").onclick = async () => { state.a++; await refresh(); };
+$("useB").onclick = async () => { state.b++; await refresh(); };
+$("reset").onclick = async () => { state.a = 0; state.b = 0; await refresh(); };
+
+let t = null;
+$("key").addEventListener("input", () => {
+  clearTimeout(t);
+  t = setTimeout(refresh, 140);
+});
+
+if (!crypto.subtle) {
+  document.querySelector(".note").innerHTML =
+    "<b>crypto.subtle is unavailable.</b> Open this page over http:// or https:// " +
+    "(for example <code>npx serve .</code>) instead of file://.";
+} else {
+  refresh();
+  setInterval(tickTotp, 250);
+}
+</script>
+</body>
+</html>

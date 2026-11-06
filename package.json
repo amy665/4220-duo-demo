@@ -1,0 +1,17 @@
+{
+  "name": "4220-duo-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "4220 DUO demo - an offline, dependency-free demonstration of how HOTP/TOTP one-time passcodes work.",
+  "scripts": {
+    "test": "node tests/test-otp.mjs",
+    "demo": "node demo/demo-step.mjs",
+    "counter": "node demo/demo-counter.mjs",
+    "window": "node demo/demo-window.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
